@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+*.Rapp.history
+.RData
+.Ruserdata
+*.DS_Store
+*.rds
+*.csv
+#alumni_docker
+alumni_test_script.R
+geocode_cache
+alumni_draft
+CA shp
+alumni_docker/rsconnect
