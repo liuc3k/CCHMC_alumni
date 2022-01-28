@@ -1,0 +1,326 @@
+---
+title: "CCHMC Alumni"
+runtime: shiny
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: bootstrap
+    logo: CCHMCLOGO.png
+---
+
+```{r global, include = FALSE}
+
+library(shiny)
+library(flexdashboard)
+library(tidyverse)
+library(leaflet)
+library(DT)
+library(sf)
+
+d_docs <- read_rds("alumni_geo.rds") 
+z_centroid <- read_rds("zcta_centroid.rds")
+
+```
+
+
+## Inputs {.sidebar }
+
+Select a provider by name, specialty:
+
+```{r}
+
+conditionalPanel(
+  condition = "input.select_specialty == null && input.select_metro == null && input.check_zip != 1",
+
+selectizeInput("select_phys", label = "Provider Name:",
+            choices = unique(sort(d_docs$phys_name)), selected = NULL, multiple = TRUE))
+
+
+# renderText(nrow(d_subset()))
+
+```
+
+---
+
+```{r}
+# filter specialty
+conditionalPanel(
+  condition = "input.select_phys == null && input.select_metro == null && input.check_zip != 1",
+
+selectizeInput("select_specialty", label = "Specialty:",
+            choices = sort(unique(d_docs$specialty1)), selected = NULL, multiple = TRUE))
+
+# contitional panel populating filter to search metros within within specialty
+conditionalPanel(
+  condition = "input.select_phys == null && input.select_metro != null",
+
+selectizeInput("select_specialty_metro", label = "Specialty:",
+            choices = sort(unique(d_docs$specialty1)), selected = NULL, multiple = TRUE))
+
+observe({
+  x <- d_docs %>% filter(metro_name %in% c(input$select_metro)) %>% st_drop_geometry()
+  updateSelectizeInput(session, "select_specialty_metro", "Specialty:", choices = sort(unique(x$specialty1)))
+})
+
+#conditional filter for specialty within zip code buffer
+
+conditionalPanel(
+  condition = "input.check_zip == 1",
+
+  selectizeInput("select_zip_specialty", label = "Specialty_zip",
+            choices = sort(unique(d_docs$specialty1)), selected = NULL, multiple = TRUE))
+
+observe({
+  x <- d_zcta() %>% filter(zip5 %in% c(input$select_zip))
+  updateSelectizeInput(session, "select_zip_specialty", "Specialty", choices = sort(unique(x$specialty1)))
+})
+
+```
+
+--- 
+
+```{r}
+## conditional panel for filtering by metro
+conditionalPanel(
+  condition = "input.select_phys == null && input.select_specialty == null && input.check_zip != 1",
+
+  selectizeInput("select_metro", label = "Metropolitan Area:",
+            choices = sort(unique(d_docs$metro_name)), selected = NULL, multiple = TRUE))
+
+
+## conditional panel for filtering by metro within specialty
+conditionalPanel(
+  condition = "input.select_phys == null && input.select_specialty != null",
+
+  selectizeInput("select_metro_special", label = "Metropolitan Area:",
+            choices = sort(unique(d_docs$metro_name)), selected = NULL, multiple = TRUE))
+
+observe({
+  x <- d_docs %>% filter(specialty1 %in% c(input$select_specialty)) %>% st_drop_geometry()
+  updateSelectizeInput(session, "select_metro_special", "Metropolitan Area:", choices = sort(unique(x$metro_name)))
+})
+```
+
+---
+
+```{r }
+## zip check
+conditionalPanel(
+  condition = "input.select_phys == null && input.select_specialty == null && input.select_metro == null",
+
+  checkboxInput("check_zip", label = "Search by Zipcode?", value = FALSE))
+
+```
+
+```{r }
+## zip code filter TEXT INPUT
+
+conditionalPanel(
+  condition = "input.check_zip == 1",
+  
+  textInput("select_zip", label = "Zip code:", value = '',
+               placeholder = "Enter zip..."))
+
+## select zip code buffer
+conditionalPanel(
+  condition = "input.check_zip == 1",
+  
+  sliderInput("buffer_slide", label = "Radius (miles)", min = 5, 
+              max = 100, value = 25, step  = 5))
+
+
+```
+
+---
+
+<br/>
+
+```{r }
+
+n_docs <- reactive({
+  if(nrow(d_subset()) > 1) {
+    paste0("\nThere are ", nrow(d_subset()), " physicians that fit your criteria.")
+  } else {
+    paste0("\nThere is ", nrow(d_subset()), " physician that fits your criteria.")
+  }
+}) 
+  
+output$docs_in_table <- renderText(n_docs())
+
+tags$h4(textOutput("docs_in_table"))
+
+```
+
+
+```{r}
+
+zcta_filter_f <- function(zips, dist) {
+    z_buff <- z_centroid %>%
+        filter(zip5 %in% zips) %>%
+        st_buffer(dist = dist*1609.34)
+    d_buff <- st_intersection(z_buff, d_docs) %>% 
+      st_drop_geometry() %>% 
+      select(ID, specialty1, zip5)
+    return(d_buff)
+}
+
+d_zcta <- reactive({
+  zcta_filter_f(zips = input$select_zip, dist = input$buffer_slide)
+})
+
+d_subset <- reactive({
+  
+  d_nogeo <- d_docs %>% st_drop_geometry()
+  doc_id <- d_nogeo %>% select(ID)
+  
+  d_phys <- if (!is.null(input$select_phys)) {
+    filter(d_nogeo, phys_name %in% c(input$select_phys)) %>% 
+      select(ID)
+  } else {
+    doc_id
+  }
+  
+  d_special <- if (!is.null(input$select_specialty)) {
+    filter(d_nogeo, specialty1 %in% c(input$select_specialty)) %>% 
+      select(ID)
+  } else {
+    doc_id
+  }
+  
+  d_special_metro <- if (!is.null(input$select_specialty_metro)) {
+    filter(d_nogeo, specialty1 %in% c(input$select_specialty_metro)) %>% 
+      select(ID)
+  } else {
+    doc_id
+  }
+  
+  d_metro_only <- if (!is.null(input$select_metro)) {
+    filter(d_nogeo, metro_name %in% c(input$select_metro)) %>% 
+      select(ID)
+  } else {
+    doc_id
+  }
+  
+   d_metro_special <- if (!is.null(input$select_metro_special)) {
+    filter(d_nogeo, metro_name %in% c(input$select_metro_special)) %>% 
+      select(ID)
+  } else {
+    doc_id
+  }
+   
+  d_zip <- if (input$check_zip == 1 & nchar(input$select_zip) > 4) {
+    d_zcta() %>% select(ID)
+  } else {
+    doc_id
+  }
+  
+  
+  d_zip_special <- if (!is.null(input$select_zip_specialty)) {
+    inner_join(d_zip, d_nogeo) %>% filter(specialty1 %in% c(input$select_zip_specialty)) %>% select(ID)
+  } else {
+    doc_id
+  }
+
+  d_output <- inner_join(d_phys, d_special) %>% 
+    inner_join(d_metro_special) %>% 
+    inner_join(d_metro_only) %>% 
+    inner_join(d_special_metro) %>% 
+    inner_join(d_zip) %>%
+    inner_join(d_zip_special) %>% 
+    inner_join(d_nogeo) 
+  
+  return(d_output)
+})
+
+d_spatial <- reactive({
+  
+  d_sf <- select(d_docs, ID)
+
+  validate(need(nrow(d_subset()) > 0,
+                  'Please extend the search radius.  No alumni are located within the specified zipcode and surrounding area.'))
+    if (nrow(d_subset()) > 0) {
+      d_subset() %>% 
+        inner_join(d_sf) %>% 
+        st_as_sf() %>% 
+        st_transform(4326) 
+    }
+})
+```
+
+
+Column 
+---------
+
+### Map 
+
+```{r}
+
+# {data-width=650}
+
+output$map <- renderLeaflet({
+  
+  pop_link <- d_spatial() %>% 
+    mutate(phys_link = paste0("<a href='", "https://google.com/search?q=", phys_search,
+                              " 'target='_blank'>", "Google this physician", "</a>")) %>% 
+      st_drop_geometry()
+  
+  map_labs <- paste(sep = "<br/>", d_spatial()$phys_name, d_spatial()$institution, pop_link$phys_link)
+
+ leaflet(d_spatial()) %>% 
+    addTiles() %>%
+    addMarkers(
+        clusterOptions = markerClusterOptions(),
+        popup = ~map_labs) %>% 
+    addProviderTiles(providers$OpenStreetMap, group = 'Open Street Map') %>%
+    addProviderTiles(providers$CartoDB.Positron, group = 'Carto Positron') %>%
+    addLayersControl(position = "topright",
+                  baseGroups = c('Open Street Map', 'Carto Positron')) 
+
+})
+
+
+leafletOutput("map")
+
+
+```
+
+Column 
+-------
+
+### Table 
+
+```{r}
+#{data-width=350}
+
+d_table <- reactive({
+  
+  d_spatial() %>% 
+      arrange(phys_name) %>% 
+      st_drop_geometry() %>% 
+      select(Provider = phys_link,
+             Institution = institution,
+             Specialty = specialty1)
+})
+  
+
+renderDT(
+
+d_table(),
+  rownames = FALSE,
+  filter='top',
+  class = 'cell-border stripe',
+escape = FALSE,
+options = list(
+    pageLength = 25,
+    paging = FALSE,
+    searchHighlight = TRUE,
+    autoWidth = FALSE,
+    scroller = TRUE,
+    scrollX = TRUE,
+    scrollY = "700px",
+    fixedColumns = FALSE)
+  )
+
+
+```
