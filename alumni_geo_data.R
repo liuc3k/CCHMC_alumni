@@ -1,10 +1,17 @@
 
-### script to geocode alumni addresses
+### script to geocode alumni addresses============
+# Here is the information for our Google account: 
+#     
+# Username: cincykidsalumni@gmail.com
+# Password: Alumni@cchmc
+###=====================================
 
 library(ggmap)
 library(tidyverse)
-
+library(sf)
+setwd('C:/Users/LIUC3K/Desktop/Rshiny project for Alumni/alumni_pangyu/CCHMC_alumni')
 source("alumni_data_format.R")
+
 
 
 unique_adds_files <- sort(list.files("./unique_adds_rds/"))
@@ -19,29 +26,43 @@ u_adds_new <- read_rds(u_adds_new_fname)
 
 # geocode options
 
-alumni_google_key = Sys.getenv("alumni_google_key")
+# alumni_google_key = Sys.getenv("alumni_google_key")
+alumni_google_key<-'AIzaSyBAU92ve9HNR7vNihHMuHHldWVBi-VtqNE'
 register_google(key = alumni_google_key)
 
 
 # # function to geocode list of addresses and write .rds file
 # 
 # alumni_geocode <- function(df) {
-#     
-#     geo_list <- df %>% 
+# 
+#     geo_list <- df %>%
 #         mutate(google_result = map(add_string, ~ geocode(.x, output='more', source='google')))
-#     
-#     geo_df <- geo_list %>% 
+# 
+#     geo_df <- geo_list %>%
 #         mutate(lat = map_dbl(google_result, 'lat'),
 #                lon = map_dbl(google_result, 'lon'),
 #                precision = map_chr(google_result, "loctype"),
-#                google_address = map_chr(google_result, "address")) %>% 
+#                google_address = map_chr(google_result, "address")) %>%
 #         select(-google_result)
 #     date_suffix <- str_replace_all(Sys.time(), "-|:| ", "_")
 #     geo_df_name <- paste0("./geocode_cache/alumni_geocodes_", date_suffix, ".rds")
 #     write_rds(geo_df, geo_df_name)
 # }
+# alumni_geocode(u_adds_new)
+geo_list <- u_adds_new %>%
+    mutate(google_result = map(add_string, ~ geocode(.x, output='more', source='google')))
 
 
+geo_df <- geo_list %>%
+    mutate(lat = map_dbl(google_result, 'lat'),
+           lon = map_dbl(google_result, 'lon')#,
+           # precision =map_chr(google_result, "loctype") ,
+           # google_address = map_chr(google_result, "address")
+           ) %>%
+    select(-google_result)
+date_suffix <- str_replace_all(Sys.time(), "-|:| ", "_")
+geo_df_name <- paste0("./geocode_cache/alumni_geocodes_", date_suffix, ".rds")
+write_rds(geo_df, geo_df_name)
 ## merge geocodes with d_address and physician data
 
 geocode_files <- sort(list.files("./geocode_cache/", pattern = ".rds"))
@@ -64,7 +85,12 @@ geo_merge <- geo_merge %>%
 
 master_merge <- inner_join(d, geo_merge)
 
+# alumni_sf <- master_merge %>%
+#     st_as_sf(coords = c('lon', 'lat'), crs = 4326) %>% 
+#     st_transform(5070)
 alumni_sf <- master_merge %>%
+    mutate(longitude=lon,
+           latitude =lat)%>%
     st_as_sf(coords = c('lon', 'lat'), crs = 4326) %>% 
     st_transform(5070)
 
