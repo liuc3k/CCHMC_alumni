@@ -3,9 +3,13 @@
 library(tidyverse)
 
 # import
-
-d_original <- read_csv("cchmc_alumni_original.csv") # alumni data 
-
+setwd('C:/Users/LIUC3K/Desktop/Rshiny project for Alumni/alumni_pangyu/CCHMC_alumni')
+# d_original <- read_csv("cchmc_alumni_original.csv") # alumni data
+##Latest Alumni data (2/28/2022)
+d_original <- read_csv("Geocode Export.csv")%>%
+     mutate(CnAttrCat_1_01_Description=`CnAttrCat_1_01_Description (General Specialty)`,
+            CnAttrCat_2_01_Description=`CnAttrCat_2_01_Description (General subspecialty)`)%>%
+    select(-c(`Deceased?`,Nickname,`Current MedSt`,`CnAttrCat_1_01_Description (General Specialty)`,`CnAttrCat_2_01_Description (General subspecialty)`))
 
 ### function to remove invalid miltibyte strings
 
